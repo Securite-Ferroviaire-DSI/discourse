@@ -1,4 +1,4 @@
-FROM ruby:3.3-slim
+FROM ruby:3.4-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
@@ -26,10 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY . /app
 
-RUN gem install bundler && \
-    bundle config set without 'development test' && \
-    bundle config set path '/usr/local/bundle' && \
-    bundle install --jobs 4 --retry 3
+RUN gem install bundler -v 2.6.4 && \
+    bundle _2.6.4_ config set without 'development test' && \
+    bundle _2.6.4_ config set path '/usr/local/bundle' && \
+    bundle _2.6.4_ install --jobs 4 --retry 3
 
 COPY entrypoint.sh /entrypoint.sh
 COPY start-discourse.sh /start-discourse.sh

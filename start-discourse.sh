@@ -26,10 +26,6 @@ precompile_assets_if_enabled() {
 }
 
 main() {
-  export PORT="${PORT:-8080}"
-  export RAILS_ENV="${RAILS_ENV:-production}"
-  export NODE_ENV="${NODE_ENV:-production}"
-
   log "Démarrage applicatif"
   log "Environment: RAILS_ENV=${RAILS_ENV}, NODE_ENV=${NODE_ENV}, PORT=${PORT}"
 

@@ -23,6 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shared-mime-info \
     tzdata \
     libyaml-dev \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . /app
@@ -30,7 +32,10 @@ COPY . /app
 RUN gem install bundler -v 2.6.4 && \
     bundle _2.6.4_ config set without 'development test' && \
     bundle _2.6.4_ config set path '/usr/local/bundle' && \
-    bundle _2.6.4_ install --jobs 4 --retry 3 --verbose
+    bundle _2.6.4_ install --jobs 4 --retry 3
+
+RUN npm install -g pnpm && \
+    pnpm install
 
 COPY entrypoint.sh /entrypoint.sh
 COPY start-discourse.sh /start-discourse.sh

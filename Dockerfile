@@ -1,48 +1,35 @@
-FROM ruby:3.4-slim
+FROM discourse/base:release
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
-ENV RAILS_ENV=production
-ENV NODE_ENV=production
+ARG DISCOURSE_DIR=/var/www/discourse
 
-WORKDIR /app
+WORKDIR ${DISCOURSE_DIR}
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash \
-    ca-certificates \
-    curl \
-    git \
-    build-essential \
-    pkg-config \
-    libpq-dev \
-    postgresql-client \
-    redis-tools \
-    imagemagick \
-    file \
-    shared-mime-info \
-    tzdata \
-    libyaml-dev \
-    nodejs \
-    npm \
-    && rm -rf /var/lib/apt/lists/*
+COPY . ${DISCOURSE_DIR}
 
-COPY . /app
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY bootstrap /usr/local/bin/bootstrap
+COPY start-discourse.sh /usr/local/bin/start-discourse.sh
 
-RUN gem install bundler -v 2.6.4 && \
-    bundle _2.6.4_ config set without 'development test' && \
-    bundle _2.6.4_ config set path '/usr/local/bundle' && \
-    bundle _2.6.4_ install --jobs 4 --retry 3
+RUN chmod +x \
+    /usr/local/bin/entrypoint.sh \
+    /usr/local/bin/bootstrap \
+    /usr/local/bin/start-discourse.sh
 
-RUN npm install -g pnpm && \
-    pnpm install
+RUN mkdir -p \
+    /shared/log/rails \
+    /shared/tmp \
+    /shared/uploads \
+    /shared/backups \
+    tmp/pids
 
-COPY entrypoint.sh /entrypoint.sh
-COPY start-discourse.sh /start-discourse.sh
+RUN rm -f tmp/pids/server.pid
 
-RUN chmod +x /entrypoint.sh /start-discourse.sh
+RUN bundle config set without 'development test' && \
+    bundle install -j "$(nproc)" --retry 3
+
+RUN if [ -f yarn.lock ]; then yarn install --frozen-lockfile; fi
 
 EXPOSE 8080
 
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/start-discourse.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["/usr/local/bin/start-discourse.sh"]

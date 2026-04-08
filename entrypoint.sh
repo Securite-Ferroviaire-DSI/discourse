@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+APP_HOME="/var/www/discourse"
+cd "${APP_HOME}"
 
 log() {
   echo "[entrypoint] $*"
@@ -11,13 +14,13 @@ fail() {
 }
 
 require_env() {
-  local var_name="$1"
-  if [[ -z "${!var_name:-}" ]]; then
-    fail "La variable d'environnement ${var_name} est requise mais absente."
-  fi
+  local var="$1"
+  [[ -z "${!var:-}" ]] && fail "Variable requise absente: ${var}"
 }
 
-map_clevercloud_postgresql_env() {
+# ---- Mapping Clever Cloud (optionnel) ----
+
+map_postgres() {
   export DISCOURSE_DB_HOST="${DISCOURSE_DB_HOST:-${POSTGRESQL_ADDON_HOST:-}}"
   export DISCOURSE_DB_PORT="${DISCOURSE_DB_PORT:-${POSTGRESQL_ADDON_PORT:-}}"
   export DISCOURSE_DB_NAME="${DISCOURSE_DB_NAME:-${POSTGRESQL_ADDON_DB:-}}"
@@ -25,93 +28,50 @@ map_clevercloud_postgresql_env() {
   export DISCOURSE_DB_PASSWORD="${DISCOURSE_DB_PASSWORD:-${POSTGRESQL_ADDON_PASSWORD:-}}"
 }
 
-map_clevercloud_redis_env() {
+map_redis() {
   export DISCOURSE_REDIS_HOST="${DISCOURSE_REDIS_HOST:-${REDIS_HOST:-}}"
   export DISCOURSE_REDIS_PORT="${DISCOURSE_REDIS_PORT:-${REDIS_PORT:-}}"
   export DISCOURSE_REDIS_PASSWORD="${DISCOURSE_REDIS_PASSWORD:-${REDIS_PASSWORD:-}}"
 }
 
-wait_for_postgres() {
-  local host="$1"
-  local port="$2"
-  local dbname="$3"
-  local user="$4"
-  local password="$5"
-  local max_attempts="${6:-20}"
+# ---- Secrets ----
 
-  log "Vérification PostgreSQL ${host}:${port}..."
-  export PGPASSWORD="${password}"
-
-  local attempt=1
-  while [[ $attempt -le $max_attempts ]]; do
-    if pg_isready -h "${host}" -p "${port}" -d "${dbname}" -U "${user}" >/dev/null 2>&1; then
-      log "PostgreSQL OK"
-      return 0
-    fi
-
-    log "PostgreSQL indisponible (${attempt}/${max_attempts})..."
-    sleep 2
-    attempt=$((attempt + 1))
-  done
-
-  fail "PostgreSQL inaccessible"
+ensure_secret() {
+  if [[ -z "${SECRET_KEY_BASE:-}" ]]; then
+    fail "SECRET_KEY_BASE doit être défini dans Clever Cloud"
+  fi
 }
 
-wait_for_redis() {
-  local host="$1"
-  local port="$2"
-  local password="${3:-}"
-  local max_attempts="${4:-20}"
+# ---- Préparation FS ----
 
-  log "Vérification Redis ${host}:${port}..."
-
-  local attempt=1
-  while [[ $attempt -le $max_attempts ]]; do
-    if [[ -n "${password}" ]]; then
-      redis-cli -h "${host}" -p "${port}" -a "${password}" ping >/dev/null 2>&1 && return 0
-    else
-      redis-cli -h "${host}" -p "${port}" ping >/dev/null 2>&1 && return 0
-    fi
-
-    log "Redis indisponible (${attempt}/${max_attempts})..."
-    sleep 2
-    attempt=$((attempt + 1))
-  done
-
-  fail "Redis inaccessible"
+prepare_fs() {
+  mkdir -p /shared/log/rails /shared/tmp /shared/uploads /shared/backups tmp/pids
+  rm -f tmp/pids/server.pid
 }
 
 main() {
-  log "Démarrage"
+  log "Initialisation"
 
-  map_clevercloud_postgresql_env
-  map_clevercloud_redis_env
-
-  require_env "DISCOURSE_DB_HOST"
-  require_env "DISCOURSE_DB_PORT"
-  require_env "DISCOURSE_DB_NAME"
-  require_env "DISCOURSE_DB_USERNAME"
-  require_env "DISCOURSE_DB_PASSWORD"
-
-  require_env "DISCOURSE_REDIS_HOST"
-  require_env "DISCOURSE_REDIS_PORT"
-
-  export PORT="${PORT:-8080}"
   export RAILS_ENV="${RAILS_ENV:-production}"
+  export DISCOURSE_ENV="${DISCOURSE_ENV:-production}"
+  export PORT="${PORT:-8080}"
 
-  wait_for_postgres \
-    "$DISCOURSE_DB_HOST" \
-    "$DISCOURSE_DB_PORT" \
-    "$DISCOURSE_DB_NAME" \
-    "$DISCOURSE_DB_USERNAME" \
-    "$DISCOURSE_DB_PASSWORD"
+  map_postgres
+  map_redis
 
-  wait_for_redis \
-    "$DISCOURSE_REDIS_HOST" \
-    "$DISCOURSE_REDIS_PORT" \
-    "${DISCOURSE_REDIS_PASSWORD:-}"
+  require_env DISCOURSE_HOSTNAME
+  require_env DISCOURSE_DEVELOPER_EMAILS
+  require_env DISCOURSE_DB_HOST
+  require_env DISCOURSE_DB_NAME
+  require_env DISCOURSE_DB_USERNAME
+  require_env DISCOURSE_DB_PASSWORD
+  require_env DISCOURSE_REDIS_HOST
 
-  log "Bootstrap OK"
+  ensure_secret
+  prepare_fs
+
+  log "Lancement bootstrap"
+  /usr/local/bin/bootstrap
 
   exec "$@"
 }

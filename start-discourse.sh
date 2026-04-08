@@ -1,39 +1,34 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+APP_HOME="/var/www/discourse"
+cd "${APP_HOME}"
 
 log() {
-  echo "[start-discourse] $*"
+  echo "[start] $*"
 }
 
-run_migrations_if_enabled() {
-  if [[ "${DISCOURSE_RUN_MIGRATIONS}" == "true" ]]; then
-    log "Exécution des migrations..."
-    bundle exec rake db:migrate
-    log "Migrations terminées."
-  else
-    log "Migrations désactivées."
+cleanup() {
+  log "Arrêt en cours..."
+  if [[ -n "${SIDEKIQ_PID:-}" ]]; then
+    kill -TERM "${SIDEKIQ_PID}" 2>/dev/null || true
+    wait "${SIDEKIQ_PID}" 2>/dev/null || true
   fi
 }
 
-precompile_assets_if_enabled() {
-  if [[ "${DISCOURSE_PRECOMPILE_ASSETS}" == "true" ]]; then
-    log "Précompilation des assets..."
-    bundle exec rake assets:precompile
-    log "Précompilation terminée."
-  else
-    log "Précompilation des assets désactivée."
-  fi
-}
+trap cleanup SIGTERM SIGINT
 
 main() {
-  log "Démarrage applicatif"
-  log "Environment: RAILS_ENV=${RAILS_ENV}, NODE_ENV=${NODE_ENV}, PORT=${PORT}"
+  log "Démarrage Sidekiq"
+  bundle exec sidekiq -e production &
+  SIDEKIQ_PID=$!
 
-  run_migrations_if_enabled
-  precompile_assets_if_enabled
-
-  log "Lancement du serveur Rails sur 0.0.0.0:${PORT}"
-  exec bundle exec rails server -b 0.0.0.0 -p "${PORT}" -e "${RAILS_ENV}"
+  log "Démarrage Puma sur port ${PORT}"
+  exec bundle exec puma \
+    -e production \
+    -b "tcp://0.0.0.0:${PORT}" \
+    -w "${WEB_CONCURRENCY}" \
+    -t "${RAILS_MAX_THREADS}:${RAILS_MAX_THREADS}"
 }
 
 main "$@"

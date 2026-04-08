@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+APP_HOME="/var/www/discourse"
+cd "${APP_HOME}"
+
+log() {
+  echo "[bootstrap] $*"
+}
+
+wait_for_tcp() {
+  local host="$1"
+  local port="$2"
+  local name="$3"
+  local retries="${4:-60}"
+
+  log "Attente ${name} (${host}:${port})..."
+
+  for ((i=1; i<=retries; i++)); do
+    if ruby -rsocket -e "TCPSocket.new('${host}', ${port}).close" >/dev/null 2>&1; then
+      log "${name} OK"
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "${name} inaccessible: ${host}:${port}" >&2
+  exit 1
+}
+
+main() {
+  wait_for_tcp "${DISCOURSE_DB_HOST}" "${DISCOURSE_DB_PORT:-5432}" "PostgreSQL"
+  wait_for_tcp "${DISCOURSE_REDIS_HOST}" "${DISCOURSE_REDIS_PORT:-6379}" "Redis"
+
+  log "Validation environnement Rails"
+  bundle exec rake environment >/dev/null
+
+  log "Migrations DB"
+  bundle exec rake db:migrate
+
+  # Optionnel : utile si tu n'as pas précompilé au build
+  if [[ "${DISCOURSE_PRECOMPILE_ASSETS:-false}" == "true" ]]; then
+    log "Précompilation assets"
+    bundle exec rake assets:precompile
+  fi
+
+  log "Bootstrap terminé"
+}
+
+main "$@"
